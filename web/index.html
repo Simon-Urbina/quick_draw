@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GAN Quick Draw</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --mute:#667085; --g:#2f6fdb; --d:#d9480f; --line:#e4e7ec; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 24px 0; max-width:1000px; margin:auto; }
+  h1 { margin:0; font-size:24px; } h2 { margin:0 0 12px; font-size:18px; }
+  .tag { display:inline-block; padding:2px 10px; border-radius:99px; background:#e7eefc; color:var(--g); font-weight:600; }
+  nav { display:flex; gap:6px; flex-wrap:wrap; margin:16px 0 0; }
+  nav a { padding:8px 14px; border-radius:8px 8px 0 0; text-decoration:none; color:var(--mute); background:#eceef2; }
+  nav a.on { background:var(--card); color:var(--ink); font-weight:600; }
+  main { max-width:1000px; margin:0 auto 40px; padding:0 24px; }
+  section { display:none; background:var(--card); padding:20px; border-radius:0 8px 8px 8px; }
+  section.on { display:block; }
+  table { border-collapse:collapse; width:100%; font-size:14px; margin-bottom:14px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mute); font-weight:600; }
+  .n { text-align:right; font-variant-numeric:tabular-nums; }
+  pre { background:#1d2330; color:#e6e9ef; padding:12px; border-radius:8px; overflow:auto; font-size:13px; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; }
+  .formula { background:#f2f4f7; padding:10px 14px; border-radius:8px; font-family:ui-monospace,monospace; margin:6px 0; }
+  img.draw { width:100%; max-width:420px; image-rendering:pixelated; border:1px solid var(--line); border-radius:6px; }
+  svg { width:100%; height:auto; }
+  .legend span { margin-right:16px; } .legend i { display:inline-block; width:12px; height:3px; vertical-align:middle; margin-right:5px; }
+  .mute { color:var(--mute); }
+</style>
+</head>
+<body>
+<header>
+  <h1>GAN sobre Quick, Draw!</h1>
+  <p class="mute" style="margin:4px 0 0">Categoría usada: <span class="tag" id="cat"></span> · <span id="samples"></span> dibujos de 28×28 para entrenar</p>
+  <p class="mute" style="margin:2px 0 0">Desarrollado por <b>Simon Urbina</b> · con apoyo de Claude (Anthropic) vía Claude Code · <a href="https://github.com/Simon-Urbina/quick_draw">GitHub</a></p>
+  <nav>
+    <a href="#datos">Datos (ndjson)</a>
+    <a href="#generador">Red Generadora</a>
+    <a href="#discriminador">Red Discriminadora</a>
+    <a href="#perdidas">Funciones de pérdida</a>
+    <a href="#valores">Valores G y D</a>
+    <a href="#resultado">Resultado</a>
+  </nav>
+</header>
+<main>
+  <section id="s-datos">
+    <h2>Datos: full_raw_<span class="cat"></span>.ndjson</h2>
+    <p>Una GAN aprende a imitar un conjunto de datos: el <b>generador</b> crea dibujos falsos y el <b>discriminador</b> intenta distinguirlos de los reales. Aquí los datos reales salen del archivo <b>crudo</b> de Quick, Draw!: cada línea es un JSON con los trazos que dibujó una persona en 20 segundos.</p>
+    <pre id="pRaw"></pre>
+    <p><code>drawing</code> = lista de trazos <code>[[x…], [y…], [t ms…]]</code> en píxeles de pantalla. Se usan solo los dibujos con <code>recognized: true</code>, se escalan y centran en un lienzo de 256×256 y se reducen a <b>28×28</b> (784 píxeles en [−1, 1]).</p>
+    <div class="grid2">
+      <div><b>Trazos crudos</b><div id="rawSvgs" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px"></div></div>
+      <div><b>Bitmaps 28×28 (entrada de D)</b><br><img class="draw" src="img/real.png" alt="Bitmaps reales" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <section id="s-generador">
+    <h2>Red neuronal Generadora (G)</h2>
+    <p>Recibe un vector de ruido <b>z</b> de <b id="zdim"></b> números aleatorios y lo transforma en un dibujo de 784 píxeles (28×28). Su objetivo es producir dibujos que el discriminador crea reales.</p>
+    <table id="tG"></table>
+    <pre id="pG"></pre>
+  </section>
+
+  <section id="s-discriminador">
+    <h2>Red neuronal Discriminadora (D)</h2>
+    <p>Recibe un dibujo de 784 píxeles (real o generado) y devuelve la probabilidad de que sea <b>real</b>. Su objetivo es no dejarse engañar por el generador.</p>
+    <table id="tD"></table>
+    <pre id="pD"></pre>
+  </section>
+
+  <section id="s-perdidas">
+    <h2>Funciones de pérdida (Binary Cross Entropy)</h2>
+    <p>La GAN original plantea un juego <b>minimax</b>: D maximiza y G minimiza</p>
+    <div class="formula">E<sub>x</sub>[log D(x)] + E<sub>z</sub>[log(1 − D(G(z)))]</div>
+    <p>Como al inicio G puede quedarse sin gradiente, se usa la variante <b>minimax modificada</b>: G maximiza log D(G(z)). Ambas se calculan con BCE:</p>
+    <div class="formula">BCE(p, y) = −[ y·log(p) + (1−y)·log(1−p) ]</div>
+    <div class="formula" style="border-left:4px solid var(--d)">Pérdida D = BCE(D(x), 1) + BCE(D(G(z)), 0)</div>
+    <div class="formula" style="border-left:4px solid var(--g)">Pérdida G = BCE(D(G(z)), 1)</div>
+    <p class="mute">D aprende a decir 1 a lo real y 0 a lo falso; G aprende a que D diga 1 a sus dibujos. Optimizador Adam, lr = <span id="lr"></span>, β = (0.5, 0.999), batch = <span id="batch"></span>.</p>
+    <div class="legend"><span><i style="background:var(--d)"></i>Pérdida D</span><span><i style="background:var(--g)"></i>Pérdida G</span></div>
+    <svg id="cLoss" viewBox="0 0 900 300"></svg>
+  </section>
+
+  <section id="s-valores">
+    <h2>Valores del generador y del discriminador</h2>
+    <p><b>D(x)</b>: probabilidad media que D asigna a dibujos reales. <b>D(G(z))</b>: probabilidad media que D asigna a los generados. En el equilibrio ideal ambas tienden a 0.5.</p>
+    <div class="legend"><span><i style="background:var(--d)"></i>D(x)</span><span><i style="background:var(--g)"></i>D(G(z))</span></div>
+    <svg id="cD" viewBox="0 0 900 300"></svg>
+    <h2 style="margin-top:16px">Estadísticas de los pesos tras el entrenamiento</h2>
+    <div class="grid2"><div><b>Generador</b><table id="wG"></table></div><div><b>Discriminador</b><table id="wD"></table></div></div>
+    <h2>Pérdidas por época</h2>
+    <table id="tH"></table>
+  </section>
+
+  <section id="s-resultado">
+    <h2>Resultado de la GAN · categoría <span class="tag" id="cat2"></span></h2>
+    <p>Mismo ruido z en cada época, para ver cómo aprende el generador. Época: <b id="ep"></b></p>
+    <input id="slider" type="range" min="1" style="width:100%;max-width:420px">
+    <div class="grid2" style="margin-top:12px">
+      <div><b>Generados por G</b><br><img class="draw" id="imgFake" alt="Dibujos generados"></div>
+      <div><b>Reales (Quick Draw)</b><br><img class="draw" src="img/real.png" alt="Dibujos reales"></div>
+    </div>
+  </section>
+</main>
+
+<script src="data.js"></script>
+<script>
+const R = window.GAN, $ = id => document.getElementById(id), H = R.history, f = v => v.toFixed(4);
+$("cat").textContent = $("cat2").textContent = R.category;
+document.querySelectorAll(".cat").forEach(e => e.textContent = R.category);
+$("pRaw").textContent = JSON.stringify({ ...R.raw_meta, drawing: "[[[x…],[y…],[t…]], …]" }, null, 1);
+// Dibuja los trazos crudos tal cual vienen (cada dibujo con su propio tamaño de pantalla)
+$("rawSvgs").innerHTML = R.raw.map(d => {
+  const xs = d.flatMap(s => s[0]), ys = d.flatMap(s => s[1]), m = 20;
+  const vb = [Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) - Math.min(...xs) + 2 * m, Math.max(...ys) - Math.min(...ys) + 2 * m];
+  return `<svg viewBox="${vb.join(" ")}" style="border:1px solid var(--line);border-radius:6px;aspect-ratio:1">` +
+    d.map(s => `<polyline fill=none stroke="#1d2330" stroke-width=${vb[2] / 60} stroke-linecap=round stroke-linejoin=round points="${s[0].map((x, i) => x + "," + s[1][i]).join(" ")}"/>`).join("") + "</svg>";
+}).join("");
+$("samples").textContent = R.samples.toLocaleString();
+$("zdim").textContent = R.hyper.z_dim; $("lr").textContent = R.hyper.lr; $("batch").textContent = R.hyper.batch;
+
+function archTable(net) {
+  return "<tr><th>Capa</th><th class=n>Pesos</th><th class=n>Sesgos</th></tr>" +
+    net.layers.map(l => `<tr><td>${l.layer}</td><td class=n>${l.weights.toLocaleString()}</td><td class=n>${l.bias.toLocaleString()}</td></tr>`).join("") +
+    `<tr><th>Total parámetros</th><th class=n colspan=2>${net.total.toLocaleString()}</th></tr>`;
+}
+function weightTable(net) {
+  return "<tr><th>Capa</th><th class=n>Media</th><th class=n>Desv.</th><th class=n>Mín</th><th class=n>Máx</th></tr>" +
+    net.layers.map(l => `<tr><td>${l.layer}</td><td class=n>${f(l.mean)}</td><td class=n>${f(l.std)}</td><td class=n>${f(l.min)}</td><td class=n>${f(l.max)}</td></tr>`).join("");
+}
+$("tG").innerHTML = archTable(R.generator); $("pG").textContent = R.generator.text;
+$("tD").innerHTML = archTable(R.discriminator); $("pD").textContent = R.discriminator.text;
+$("wG").innerHTML = weightTable(R.generator); $("wD").innerHTML = weightTable(R.discriminator);
+$("tH").innerHTML = "<tr><th>Época</th><th class=n>Pérdida D</th><th class=n>Pérdida G</th><th class=n>D(x)</th><th class=n>D(G(z))</th></tr>" +
+  H.map(h => `<tr><td>${h.epoch}</td><td class=n>${f(h.loss_D)}</td><td class=n>${f(h.loss_G)}</td><td class=n>${f(h.D_x)}</td><td class=n>${f(h.D_G_z)}</td></tr>`).join("");
+
+// Gráfica de líneas en SVG puro (sin librerías)
+function chart(svg, series, max) {
+  const W = 900, Hh = 300, L = 45, B = 30, T = 10, n = H.length;
+  const x = i => L + (W - L - 10) * (n > 1 ? i / (n - 1) : 0), y = v => T + (Hh - T - B) * (1 - v / max);
+  let s = "";
+  for (let k = 0; k <= 4; k++) { const v = max * k / 4;
+    s += `<line x1=${L} x2=${W-10} y1=${y(v)} y2=${y(v)} stroke="#e4e7ec"/><text x=${L-6} y=${y(v)+4} font-size=12 text-anchor=end fill="#667085">${v.toFixed(2)}</text>`; }
+  H.forEach((h, i) => { if (n < 12 || i % Math.ceil(n / 10) == 0) s += `<text x=${x(i)} y=${Hh-8} font-size=12 text-anchor=middle fill="#667085">${h.epoch}</text>`; });
+  series.forEach(([key, color]) => s += `<polyline fill=none stroke="${color}" stroke-width=2.5 points="${H.map((h, i) => x(i) + "," + y(h[key])).join(" ")}"/>`);
+  svg.innerHTML = s;
+}
+chart($("cLoss"), [["loss_D", "#d9480f"], ["loss_G", "#2f6fdb"]], Math.ceil(Math.max(...H.flatMap(h => [h.loss_D, h.loss_G]))));
+chart($("cD"), [["D_x", "#d9480f"], ["D_G_z", "#2f6fdb"]], 1);
+
+const sl = $("slider");
+sl.max = H.length; sl.value = H.length;
+const show = () => { $("ep").textContent = sl.value; $("imgFake").src = `img/epoch_${String(sl.value).padStart(3, "0")}.png`; };
+sl.oninput = show; show();
+
+// Pestañas: la sección visible depende del #hash de la URL
+const tab = () => {
+  const id = location.hash.slice(1) || "datos";
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id == "s-" + id));
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.hash == "#" + id));
+};
+window.onhashchange = tab; tab();
+</script>
+</body>
+</html>
