@@ -2,7 +2,7 @@
 
 Proyecto académico (IA Generativa, 2026-2) desarrollado con *vibe coding*: una **Red Generativa Adversarial (GAN)** que aprende a dibujar galletas a partir de los trazos crudos del dataset [Quick, Draw!](https://quickdraw.withgoogle.com/data) (`full_raw_cookie.ndjson`), más un frontend sencillo que explica sus parámetros, funciones de pérdida y resultados.
 
-**Desarrollador:** Simon Urbina ([@Simon-Urbina](https://github.com/Simon-Urbina)) · desarrollado con el apoyo de **Claude** (Anthropic), mediante Claude Code.
+**Desarrollador:** Simón Urbina ([@Simon-Urbina](https://github.com/Simon-Urbina)) · desarrollado con el apoyo de **Claude** (Anthropic), mediante Claude Code.
 
 **Categoría usada: `cookie` (galleta)** — 20 000 dibujos reconocidos, convertidos a 28×28 píxeles.
 
@@ -125,7 +125,7 @@ Según el curso de Google:
 
 ## Autor
 
-- **Simon Urbina** — desarrollo, idea del proyecto y dataset (`full_raw_cookie.ndjson`).
+- **Simón Urbina** — desarrollo, idea del proyecto y dataset (`full_raw_cookie.ndjson`).
 - **Claude** (Anthropic), vía Claude Code — apoyo en el código, el frontend y la documentación (*vibe coding*).
 
 ## Tecnologías
